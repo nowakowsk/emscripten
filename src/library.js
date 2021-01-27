@@ -3771,13 +3771,16 @@ LibraryManager.library = {
   },
 
   // Callable in pthread without __proxy needed.
+  emscripten_exit_with_live_runtime__sig: 'v',
+  emscripten_exit_with_live_runtime__deps: ['$runtimeKeepalivePush'],
   emscripten_exit_with_live_runtime: function() {
 #if !MINIMAL_RUNTIME
-    noExitRuntime = true;
+    runtimeKeepalivePush();
 #endif
     throw 'unwind';
   },
 
+  emscripten_force_exit__deps: ['$runtimeKeepaliveCounter'],
   emscripten_force_exit__proxy: 'sync',
   emscripten_force_exit__sig: 'vi',
   emscripten_force_exit: function(status) {
@@ -3788,9 +3791,106 @@ LibraryManager.library = {
 #endif
 #if !MINIMAL_RUNTIME
     noExitRuntime = false;
+    runtimeKeepaliveCounter = 0;
 #endif
     exit(status);
   },
+
+#if !MINIMAL_RUNTIME
+  $runtimeKeepaliveCounter: 0,
+
+  $keepRuntimeAlive__deps: ['$runtimeKeepaliveCounter'],
+  $keepRuntimeAlive: function() {
+    return noExitRuntime || runtimeKeepaliveCounter > 0;
+  },
+
+  // Callable in pthread without __proxy needed.
+  $runtimeKeepalivePush__sig: 'v',
+  $runtimeKeepalivePush__deps: ['$runtimeKeepaliveCounter'],
+  $runtimeKeepalivePush: function() {
+    runtimeKeepaliveCounter += 1;
+#if RUNTIME_DEBUG
+    err('runtimeKeepalivePush -> counter=' + runtimeKeepaliveCounter);
+#endif
+  },
+
+  $runtimeKeepalivePop__sig: 'v',
+  $runtimeKeepalivePop__deps: ['$runtimeKeepaliveCounter'],
+  $runtimeKeepalivePop: function() {
+#if ASSERTIONS
+    assert(runtimeKeepaliveCounter > 0);
+#endif
+    runtimeKeepaliveCounter -= 1;
+#if RUNTIME_DEBUG
+    err('runtimeKeepalivePop -> counter=' + runtimeKeepaliveCounter);
+#endif
+  },
+
+
+  // Used to call user callbacks from the embedder / event loop.  For example
+  // setTimeout or any other kind of event handler that calls into user case
+  // needs to use this wrapper.
+  //
+  // The job of this wrapper is the handle emscripten-specfic exceptions such
+  // as ExitStatus and 'unwind' and prevent these from escaping to the top
+  // level.
+  $callUserCallback__deps: ['$maybeExit'],
+  $callUserCallback: function(func) {
+    if (ABORT) {
+#if ASSERTIONS
+      err('user callback triggered after application aborted.  Ignoring.');
+      return;
+#endif
+    }
+    try {
+      func();
+    } catch (e) {
+      if (e instanceof ExitStatus) {
+        return;
+      } else if (e !== 'unwind') {
+        // An actual unexpected user-exception occurred
+        if (e && typeof e === 'object' && e.stack) err('exception thrown: ' + [e, e.stack]);
+        throw e;
+      }
+    }
+    maybeExit();
+  },
+
+  $maybeExit__deps: ['exit',
+#if USE_PTHREADS
+    'pthread_exit',
+#endif
+  ],
+  $maybeExit: function() {
+#if RUNTIME_DEBUG
+    err('maybeExit: user callback done: runtimeKeepaliveCounter=' + runtimeKeepaliveCounter);
+#endif
+    if (!keepRuntimeAlive()) {
+#if RUNTIME_DEBUG
+      err('maybeExit: calling exit() implicitly after user callback completed: ' + EXITSTATUS);
+#endif
+      try {
+#if USE_PTHREADS
+        if (ENVIRONMENT_IS_PTHREAD) _pthread_exit(EXITSTATUS);
+        else
+#endif
+        _exit(EXITSTATUS);
+      } catch (e) {
+        if (e instanceof ExitStatus) {
+          return;
+        }
+        throw e;
+      }
+    }
+  },
+#else
+  // MINIMAL_RUNTIME doesn't support the runtimeKeepalive stuff
+  $runtimeKeepalivePush: function() {},
+  $runtimeKeepalivePop: function() {},
+  $callUserCallback: function(func) {
+    func();
+  },
+#endif
 };
 
 function autoAddDeps(object, name) {
