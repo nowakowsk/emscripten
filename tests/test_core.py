@@ -8148,14 +8148,18 @@ NODEFS is no longer included by default; build with -lnodefs.js
     ''', '''
       #include <string.h>
 
+      // Infinite recursion while recording stack pointer locations
+      // so that compiler can't eliminate the stack allocs.
+      static int accumulator = 0;
+
       int f(int *b) {
-        int a[64];
-        memset(b, 0, 2048 * sizeof(int));
+        accumulator += (int)b;
+        int a[1024];
         return f(a);
       }
 
       void sidey() {
-        int a[2048];
+        int a[1048];
         f(a);
       }
     ''', ['abort(stack overflow)', '__handle_stack_overflow'], assert_returncode=NON_ZERO, force_c=True)

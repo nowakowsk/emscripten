@@ -9457,8 +9457,8 @@ int main() {
     # First ensure all the system libs are built
     self.run_process([EMCC, path_from_root('tests', 'unistd', 'close.c')])
 
-    self.assertContained('undefined symbol:', self.expect_fail([EMCC, path_from_root('tests', 'unistd', 'close.c'), '-nostdlib']))
-    self.assertContained('undefined symbol:', self.expect_fail([EMCC, path_from_root('tests', 'unistd', 'close.c'), '-nodefaultlibs']))
+    self.assertContained('undefined symbol:', self.expect_fail([EMCC, '-sSTACK_OVERFLOW_CHECK=0', path_from_root('tests', 'unistd', 'close.c'), '-nostdlib']))
+    self.assertContained('undefined symbol:', self.expect_fail([EMCC, '-sSTACK_OVERFLOW_CHECK=0', path_from_root('tests', 'unistd', 'close.c'), '-nodefaultlibs']))
 
     # Build again but with explit system libraries
     libs = ['-lc', '-lcompiler_rt', '-lc_rt_wasm']

@@ -139,11 +139,11 @@ def update_settings_glue(metadata, DEBUG):
   shared.Settings.MODULE_EXPORTS = [(asmjs_mangle(f), f) for f in metadata['exports']]
 
   if shared.Settings.STACK_OVERFLOW_CHECK:
-    if 'emscripten_stack_get_end' not in metadata['exports']:
-      logger.warning('STACK_OVERFLOW_CHECK disabled because emscripten stack helpers not exported')
-      shared.Settings.STACK_OVERFLOW_CHECK = 0
-    else:
-      shared.Settings.EXPORTED_RUNTIME_METHODS += ['writeStackCookie', 'checkStackCookie']
+    shared.Settings.EXPORTED_RUNTIME_METHODS += ['writeStackCookie', 'checkStackCookie']
+    # writeStackCookie and checkStackCookie both rely on emscripten_stack_get_end being
+    # exported.
+    if not shared.Settings.SIDE_MODULE and 'emscripten_stack_get_end' not in metadata['exports']:
+      exit_with_error('STACK_OVERFLOW_CHECK enabled by emscripten stack helpers not exported')
 
 
 def apply_static_code_hooks(forwarded_json, code):
